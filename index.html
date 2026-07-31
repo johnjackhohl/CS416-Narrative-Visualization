@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>The Grades Say It's Fine, But is Generative AI Really Helping Students?</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  body { font-family: sans-serif; margin: 20px; }
+  .annotation_box { fill: white; stroke: black; }
+  .annotation_line { stroke: black; }
+  .annotation_title { font-size: 11px; font-weight: bold; }
+  .annotation_text { font-size: 12px; }
+  .bar { fill: blue; }
+  .bar_dark { fill: gray; }
+  .bar_label { font-size: 11px; text-anchor: middle; }
+  .count_label { font-size: 10px; text-anchor: middle; fill: gray; }
+  .line_dependency { fill: none; stroke: red; stroke-width: 2; }
+  .line_anxiety { fill: none; stroke: orange; stroke-width: 2; }
+  .line_study { fill: none; stroke: green; stroke-width: 2; }
+  .line_label { font-size: 12px; }
+  .stack_low { fill: green; }
+  .stack_medium { fill: gold; }
+  .stack_high { fill: red; }
+  .legend_text { font-size: 12px; }
+  .tooltip { font-size: 12px; }
+  #footnote { font-size: 12px; color: gray; }
+  #controls { margin-top: 10px; }
+</style>
+</head>
+<body>
+
+
+<h1 id="scene_title"></h1>
+<p id="scene_subtitle"></p>
+
+<svg id="chart"></svg>
+
+<div id="controls"></div>
+
+<p>
+  <span id="progress">Scene 1 / 4</span>
+  <button id="next_button">Next</button>
+</p>
+
+<p id="status">Loading data...</p>
+<p id="footnote"></p>
+
+<script>
+
+var current_scene = 1;
+var exploration = false;
+var filter_major = "All";
+var filter_policy = "All";
+
+var bins = ["0-5", "5-10", "10-15", "15-20", "20-25", "25+"];
+
+var student_data = [];
+
+
+var width = 880;
+var height = 520;
+var margin_top = 30;
+var margin_right = 30;
+var margin_bottom = 70;
+var margin_left = 75;
+var inner_width = width - margin_left - margin_right;
+var inner_height = height - margin_top - margin_bottom;
+
+var svg = d3.select("#chart")
+			.attr("width", width)
+			.attr("height", height);
+
+function get_bin(hours) {
+  if (hours <= 5)  { return "0-5"; }
+  if (hours <= 10) { return "5-10"; }
+  if (hours <= 15) { return "10-15"; }
+  if (hours <= 20) { return "15-20"; }
+  if (hours <= 25) { return "20-25"; }
+  return "25+";
+}
+
+
+function get_filtered_data() {
+  var result = [];
+  for (var i = 0; i < student_data.length; i++) {
+	var s = student_data[i];
+	var major_ok = (filter_major === "All" || s.major === filter_major);
+	var policy_ok = (filter_policy === "All" || s.policy === filter_policy);
+	if (major_ok && policy_ok) {
+	  result.push(s);
+	}
+  }
+  return result;
+}
+
+function get_gpa(data) {
+  var gpa_data = [];
+  for (var i = 0; i < bins.length; i++) {
+	var bin_name = bins[i];
+	var total = 0;
+	var count = 0;
+	for (var j = 0; j < data.length; j++) {
+	  if (data[j].bin === bin_name) {
+		total = total + data[j].gpa_change;
+		count = count + 1;
+	  }
+	}
+	gpa_data.push({
+	  bin: bin_name,
+	  mean_change: total / count,
+	  count: count
+	});
+  }
+  return gpa_data;
+}
+
+function get_impact(data) {
+  var impact_data = [];
+  for (var i = 0; i < bins.length; i++) {
+	var bin_name = bins[i];
+	var total_dep = 0;
+	var total_anx = 0;
+	var total_study = 0;
+	var count = 0;
+	for (var j = 0; j < data.length; j++) {
+	  if (data[j].bin === bin_name) {
+		total_dep = total_dep + data[j].dependency;
+		total_anx = total_anx + data[j].exam_anxiety;
+		total_study = total_study + data[j].study_hours;
+		count = count + 1;
+	  }
+	}
+	impact_data.push({
+	  bin: bin_name,
+	  dependency: total_dep / count,
+	  anxiety: total_anx / count,
+	  study: total_study / count,
+	  count: count
+	});
+  }
+  return impact_data;
+}
+
+function get_burnout(data) {
+  var burnout_data = [];
+  for (var i = 0; i < bins.length; i++) {
+	var bin_name = bins[i];
+	var low = 0;
+	var medium = 0;
+	var high = 0;
+	var count = 0;
+	for (var j = 0; j < data.length; j++) {
+	  if (data[j].bin === bin_name) {
+		if (data[j].burnout_risk === "Low"){ 
+		  low = low + 1; 
+		}
+		if (data[j].burnout_risk === "Medium"){
+		  medium = medium + 1;
+		}
+		if (data[j].burnout_risk === "High"){
+		  high = high + 1;
+		}
+		count = count + 1;
+	  }
+	}
+	burnout_data.push({
+	  bin: bin_name,
+	  low: low / count,
+	  medium: medium / count,
+	  high: high / count,
+	  count: count
+	});
+  }
+  return burnout_data;
+}
+
+function draw_annotation(group, anchor_x, anchor_y, box_x, box_y, title, message) {
+  var box_width = 250;
+  var padding = 12;
+
+  group.append("line")
+	   .attr("class", "annotation_line")
+	   .attr("x1", anchor_x)
+	   .attr("y1", anchor_y)
+	   .attr("x2", box_x)
+	   .attr("y2", box_y);
+
+  var box = group.append("rect")
+				 .attr("class", "annotation_box")
+				 .attr("x", box_x)
+				 .attr("y", box_y)
+				 .attr("width", box_width);
+
+  group.append("text")
+	   .attr("class", "annotation_title")
+	   .attr("x", box_x + padding)
+	   .attr("y", box_y + padding + 10)
+	   .text(title);
+
+  var words = message.split(" ");
+  var lines = [];
+  var current_line = "";
+  for (var i = 0; i < words.length; i++) {
+	var test_line = current_line + words[i] + " ";
+	if (test_line.length > 40) {
+	  lines.push(current_line);
+	  current_line = words[i] + " ";
+	} else {
+	  current_line = test_line;
+	}
+  }
+  lines.push(current_line);
+
+  for (var i = 0; i < lines.length; i++) {
+	group.append("text")
+		 .attr("class", "annotation_text")
+		 .attr("x", box_x + padding)
+		 .attr("y", box_y + padding + 25 + (i * 15))
+		 .text(lines[i]);
+  }
+
+  box.attr("height", padding * 2 + 25 + lines.length * 15);
+}
+
+function find_bin(bin_name, data) {
+  for (var k = 0; k < data.length; k++) {
+	if (data[k].bin === bin_name) {
+	  return data[k];
+	}
+  }
+  return null;
+}
+
+function draw_scene_1() {
+  svg.selectAll("*").remove();
+
+  var gpa_data = get_gpa(get_filtered_data());
+
+  var group = svg.append("g")
+				 .attr("transform", "translate(" + margin_left + "," + margin_top + ")");
+
+  var x_scale = d3.scaleBand()
+				  .domain(bins)
+				  .range([0, inner_width])
+				  .padding(0.25);
+
+  var y_scale = d3.scaleLinear()
+				  .domain([0, 0.50])
+				  .range([inner_height, 0]);
+
+  group.append("g")
+	   .attr("transform", "translate(0," + inner_height + ")")
+	   .call(d3.axisBottom(x_scale));
+
+  group.append("g")
+	   .call(d3.axisLeft(y_scale));
+
+  group.append("text")
+	   .attr("x", inner_width / 2)
+	   .attr("y", inner_height + 50)
+	   .attr("text-anchor", "middle")
+	   .text("Weekly Hours Using Generative AI");
+
+  group.append("text")
+	   .attr("transform", "rotate(-90)")
+	   .attr("x", -inner_height / 2)
+	   .attr("y", -50)
+	   .attr("text-anchor", "middle")
+	   .text("Average Change in GPA");
+
+  for (var i = 0; i < gpa_data.length; i++) {
+	var row = gpa_data[i];
+
+	var bar_class = "bar";
+	if (row.bin === "25+") {
+	  bar_class = "bar_dark";
+	}
+
+	group.append("rect")
+		 .attr("class", bar_class)
+		 .attr("x", x_scale(row.bin))
+		 .attr("y", y_scale(row.mean_change))
+		 .attr("width", x_scale.bandwidth())
+		 .attr("height", inner_height - y_scale(row.mean_change));
+
+	group.append("text")
+		 .attr("class", "bar_label")
+		 .attr("x", x_scale(row.bin) + x_scale.bandwidth() / 2)
+		 .attr("y", y_scale(row.mean_change) - 10)
+		 .text(d3.format("+.2f")(row.mean_change));
+
+	group.append("text")
+		 .attr("class", "count_label")
+		 .attr("x", x_scale(row.bin) + x_scale.bandwidth() / 2)
+		 .attr("y", inner_height + 30)
+		 .text("count = " + d3.format(",")(row.count));
+  }
+
+  draw_annotation(
+	group,
+	x_scale("5-10") + x_scale.bandwidth() / 2,
+	y_scale(find_bin("5-10", gpa_data).mean_change),
+	5,
+	5,
+	"Flat Across the Board",
+	"Every group ended the semester with a higher GPA than it started, and the gain is about the same size no matter how much AI a student used."
+  );
+
+  draw_annotation(
+	group,
+	x_scale("25+") + x_scale.bandwidth() / 2,
+	y_scale(find_bin("25+", gpa_data).mean_change),
+	inner_width - 250,
+	5,
+	"Students Using AI the Most Gained the Least",
+	"Students above 25 hours a week gained the least, but the gap is about five hundredths of a grade point."
+  );
+}
+
+function draw_cost_chart() {
+  svg.selectAll("*").remove();
+
+  var impact_data = get_impact(get_filtered_data());
+  var base_dependency = impact_data[0].dependency;
+  var base_anxiety = impact_data[0].anxiety;
+  var base_study = impact_data[0].study;
+
+  for (var i = 0; i < impact_data.length; i++) {
+	impact_data[i].dependency_pct = ((impact_data[i].dependency / base_dependency) - 1) * 100;
+	impact_data[i].anxiety_pct = ((impact_data[i].anxiety / base_anxiety) - 1) * 100;
+	impact_data[i].study_pct = ((impact_data[i].study / base_study) - 1) * 100;
+  }
+
+  var group = svg.append("g")
+				 .attr("transform", "translate(" + margin_left + "," + margin_top + ")");
+
+  var x_scale = d3.scalePoint()
+				  .domain(bins)
+				  .range([0, inner_width])
+				  .padding(0.5);
+
+  var y_scale = d3.scaleLinear()
+				  .domain([-40, 180])
+				  .range([inner_height, 0]);
+
+  group.append("g")
+	   .attr("transform", "translate(0," + inner_height + ")")
+	   .call(d3.axisBottom(x_scale));
+
+  group.append("g")
+	   .call(d3.axisLeft(y_scale).tickFormat(function (d) { return d + "%"; }));
+
+  group.append("line")
+	   .attr("x1", 0)
+	   .attr("x2", inner_width)
+	   .attr("y1", y_scale(0))
+	   .attr("y2", y_scale(0))
+	   .attr("stroke", "gray")
+	   .attr("stroke-dasharray", "3,3");
+
+  group.append("text")
+	   .attr("x", inner_width / 2)
+	   .attr("y", inner_height + 50)
+	   .attr("text-anchor", "middle")
+	   .text("Weekly Hours Using Generative AI");
+
+  group.append("text")
+	   .attr("transform", "rotate(-90)")
+	   .attr("x", -inner_height / 2)
+	   .attr("y", -50)
+	   .attr("text-anchor", "middle")
+	   .text("Change Compared with the Lightest Users");
+
+  var dep_line = d3.line()
+				   .x(function (d) { return x_scale(d.bin); })
+				   .y(function (d) { return y_scale(d.dependency_pct); });
+
+  var anx_line = d3.line()
+				   .x(function (d) { return x_scale(d.bin); })
+				   .y(function (d) { return y_scale(d.anxiety_pct); });
+
+  var study_line = d3.line()
+					 .x(function (d) { return x_scale(d.bin); })
+					 .y(function (d) { return y_scale(d.study_pct); });
+
+  group.append("path").datum(impact_data).attr("class", "line_dependency").attr("d", dep_line);
+  group.append("path").datum(impact_data).attr("class", "line_anxiety").attr("d", anx_line);
+  group.append("path").datum(impact_data).attr("class", "line_study").attr("d", study_line);
+
+  var last = impact_data[impact_data.length - 1];
+
+  group.append("text")
+	   .attr("class", "line_label")
+	   .attr("fill", "crimson")
+	   .attr("x", x_scale(last.bin) + 6)
+	   .attr("y", y_scale(last.dependency_pct))
+	   .text("Dependency");
+
+  group.append("text")
+	   .attr("class", "line_label")
+	   .attr("fill", "darkorange")
+	   .attr("x", x_scale(last.bin) + 6)
+	   .attr("y", y_scale(last.anxiety_pct))
+	   .text("Exam anxiety");
+
+  group.append("text")
+	   .attr("class", "line_label")
+	   .attr("fill", "seagreen")
+	   .attr("x", x_scale(last.bin) + 6)
+	   .attr("y", y_scale(last.study_pct))
+	   .text("Study hours");
+
+  return {
+	group: group,
+	x_scale: x_scale,
+	y_scale: y_scale,
+	impact_data: impact_data
+  };
+}
+
+function draw_scene_2() {
+  var chart = draw_cost_chart();
+  var last = chart.impact_data[chart.impact_data.length - 1];
+
+  draw_annotation(
+	chart.group,
+	chart.x_scale("25+"),
+	chart.y_scale(last.dependency_pct),
+	30,
+	90,
+	"Dependency on AI Increases",
+	"As weekly AI hours go up, students say they depend on it far more."
+  );
+}
+
+function draw_scene_3() {
+  var chart = draw_cost_chart();
+  var last = chart.impact_data[chart.impact_data.length - 1];
+
+  draw_annotation(
+	chart.group,
+	chart.x_scale("25+"),
+	chart.y_scale(last.anxiety_pct),
+	30,
+	10,
+	"Anxiety Rises Too",
+	"Exam anxiety also goes up with heavier use. Exams are the one place that generative AI is not there to help. That is where the stress shows."
+  );
+
+  draw_annotation(
+	chart.group,
+	chart.x_scale("25+"),
+	chart.y_scale(last.study_pct),
+	inner_width - 280,
+	inner_height - 150,
+	"Study Hours Fall",
+	"At the same time, traditional study hours fall. Heavy users are leaning on the tool and studying less on their own."
+  );
+}
+
+function draw_scene_4() {
+  svg.selectAll("*").remove();
+
+  var burnout = get_burnout(get_filtered_data());
+
+  var group = svg.append("g")
+				 .attr("transform", "translate(" + margin_left + "," + margin_top + ")");
+
+  var x_scale = d3.scaleBand()
+				  .domain(bins)
+				  .range([0, inner_width])
+				  .padding(0.25);
+
+  var y_scale = d3.scaleLinear()
+				  .domain([0, 1])
+				  .range([inner_height, 0]);
+
+  group.append("g")
+	   .attr("transform", "translate(0," + inner_height + ")")
+	   .call(d3.axisBottom(x_scale));
+
+  group.append("g")
+	   .call(d3.axisLeft(y_scale).tickFormat(d3.format(".0%")));
+
+  group.append("text")
+	   .attr("x", inner_width / 2)
+	   .attr("y", inner_height + 50)
+	   .attr("text-anchor", "middle")
+	   .text("Weekly Hours Using Generative AI");
+
+  group.append("text")
+	   .attr("transform", "rotate(-90)")
+	   .attr("x", -inner_height / 2)
+	   .attr("y", -50)
+	   .attr("text-anchor", "middle")
+	   .text("Share of Students");
+
+  for (var i = 0; i < burnout.length; i++) {
+	var row = burnout[i];
+	var bx = x_scale(row.bin);
+	var bw = x_scale.bandwidth();
+
+	var low_h = inner_height - y_scale(row.low);
+	var med_h = inner_height - y_scale(row.medium);
+	var high_h = inner_height - y_scale(row.high);
+
+	group.append("rect")
+		 .attr("class", "stack_low")
+		 .attr("x", bx)
+		 .attr("y", y_scale(row.low))
+		 .attr("width", bw)
+		 .attr("height", low_h);
+
+	group.append("rect")
+		 .attr("class", "stack_medium")
+		 .attr("x", bx)
+		 .attr("y", y_scale(row.low + row.medium))
+		 .attr("width", bw)
+		 .attr("height", med_h);
+
+	group.append("rect")
+		 .attr("class", "stack_high")
+		 .attr("x", bx)
+		 .attr("y", y_scale(row.low + row.medium + row.high))
+		 .attr("width", bw)
+		 .attr("height", high_h);
+  }
+
+  draw_stack_legend(group);
+
+  var last = burnout[burnout.length - 1];
+
+  var high_middle = last.low + last.medium + (last.high / 2);
+  draw_annotation(
+	group,
+	x_scale("25+") + x_scale.bandwidth() / 2,
+	y_scale(high_middle),
+	5,
+	inner_height - 125,
+	"Burnout Risk Rises Sharply",
+	"Among the lightest users about 1 in 10 is at high burnout risk. Among the heaviest users it is more than 8 in 10. The grades never showed this side of generative AI usage."
+  );
+}
+
+function draw_stack_legend(group) {
+  var items = [
+	{ label: "Low risk", css: "stack_low" },
+	{ label: "Medium risk", css: "stack_medium" },
+	{ label: "High risk", css: "stack_high" }
+  ];
+  for (var i = 0; i < items.length; i++) {
+	var lx = inner_width - 110;
+	var ly = 10 + i * 20;
+	group.append("rect")
+		 .attr("class", items[i].css)
+		 .attr("x", lx)
+		 .attr("y", ly)
+		 .attr("width", 14)
+		 .attr("height", 14);
+	group.append("text")
+		 .attr("class", "legend_text")
+		 .attr("x", lx + 20)
+		 .attr("y", ly + 10)
+		 .text(items[i].label);
+  }
+}
+
+function build_controls() {
+  var controls = d3.select("#controls");
+  controls.html("");
+
+  if (exploration === false) {
+	return;
+  }
+
+  controls.append("span").text("Major: ");
+
+  var majors = ["All", "STEM", "Business", "Medical", "Humanities", "Arts"];
+  var major_select = controls.append("select").attr("id", "major_select");
+  for (var i = 0; i < majors.length; i++) {
+	major_select.append("option").attr("value", majors[i]).text(majors[i]);
+  }
+  major_select.on("change", handle_filter_change);
+
+  controls.append("span").text("Policy: ");
+
+  var policies = ["All", "Strict_Ban", "Allowed_With_Citation", "Actively_Encouraged"];
+  var policy_select = controls.append("select").attr("id", "policy_select");
+  for (var j = 0; j < policies.length; j++) {
+	policy_select.append("option").attr("value", policies[j]).text(policies[j]);
+  }
+  policy_select.on("change", handle_filter_change);
+}
+
+function handle_filter_change() {
+  filter_major = d3.select("#major_select").property("value");
+  filter_policy = d3.select("#policy_select").property("value");
+  draw_scene_4();
+}
+
+function show_scene() {
+  if (current_scene === 1) {
+	d3.select("#scene_title").text("The Grades Say It's Fine, But is Generative AI Really Helping Students?");
+	d3.select("#scene_subtitle").text("Average change in GPA from before the semester to after, grouped by how many hours a week students used generative AI.");
+	draw_scene_1();
+  } else if (current_scene === 2) {
+	d3.select("#scene_title").text("But Something Else is Happening.");
+	d3.select("#scene_subtitle").text("The same students, now measured on how dependent they feel on AI. Pay attention to the red line.");
+	draw_scene_2();
+  } else if (current_scene === 3) {
+	d3.select("#scene_title").text("And it is not Just Dependency on AI.");
+	d3.select("#scene_subtitle").text("The same chart again. This time look at exam anxiety and at how much students study on their own.");
+	draw_scene_3();
+  } else if (current_scene === 4) {
+	d3.select("#scene_title").text("Even Bigger than the Grades, the Impact on Student Well-being.");
+	d3.select("#scene_subtitle").text("Burnout risk by usage group. Grades looked fine, but burnout does not. Use the menus below to explore.");
+	draw_scene_4();
+  }
+
+  d3.select("#progress").text("Scene " + current_scene + " / 4");
+  build_controls();
+}
+
+function handle_next_click() {
+  if (current_scene < 4) {
+	current_scene = current_scene + 1;
+	if (current_scene === 4) {
+	  exploration = true;
+	}
+	show_scene();
+  } else {
+	current_scene = 1;
+	exploration = false;
+	filter_major = "All";
+	filter_policy = "All";
+	d3.select("#next_button").text("Next");
+	show_scene();
+  }
+
+  if (current_scene === 4) {
+	d3.select("#next_button").text("Restart");
+  }
+}
+
+d3.select("#next_button").on("click", handle_next_click);
+
+
+function load_data(row) {
+	return {
+		gpa_change:   Number(row.Post_Semester_GPA) - Number(row.Pre_Semester_GPA),
+		bin:          get_bin(Number(row.Weekly_GenAI_Hours)),
+		burnout_risk: row.Burnout_Risk_Level,
+		dependency:   Number(row.Perceived_AI_Dependency),
+		exam_anxiety: Number(row.Anxiety_Level_During_Exams),
+		study_hours:  Number(row.Traditional_Study_Hours),
+		major:        row.Major_Category,
+		policy:       row.Institutional_Policy,
+	};
+}
+
+function start(all_data) {
+  student_data = all_data;
+  d3.select("#status").text("");
+  show_scene();
+  d3.select("#footnote")
+	.text("Based on all " + d3.format(",")(all_data.length) + " students. "
+		+ "This is observational data, so the differences are associations, not causes.");
+}
+
+d3.csv("ai_student_impact_dataset.csv", load_data).then(start);
+
+</script>
+</body>
+</html>
