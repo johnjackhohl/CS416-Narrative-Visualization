@@ -548,19 +548,19 @@ function draw_stack_legend(group) {
 	{ label: "Medium risk", css: "stack_medium" },
 	{ label: "High risk", css: "stack_high" }
   ];
+  var legend_y = inner_height + 55;
   for (var i = 0; i < items.length; i++) {
-	var lx = inner_width - 110;
-	var ly = 10 + i * 20;
+	var lx = i * 110;
 	group.append("rect")
 		 .attr("class", items[i].css)
 		 .attr("x", lx)
-		 .attr("y", ly)
+		 .attr("y", legend_y)
 		 .attr("width", 14)
 		 .attr("height", 14);
 	group.append("text")
 		 .attr("class", "legend_text")
 		 .attr("x", lx + 20)
-		 .attr("y", ly + 10)
+		 .attr("y", legend_y + 10)
 		 .text(items[i].label);
   }
 }
@@ -582,7 +582,7 @@ function build_controls() {
   }
   major_select.on("change", handle_filter_change);
 
-  controls.append("span").text("Policy: ");
+  controls.append("span").text("	Policy: ");
 
   var policies = ["All", "Strict_Ban", "Allowed_With_Citation", "Actively_Encouraged"];
   var policy_select = controls.append("select").attr("id", "policy_select");
@@ -600,19 +600,19 @@ function handle_filter_change() {
 
 function show_scene() {
   if (current_scene === 1) {
-	d3.select("#scene_title").text("The Grades Say It's Fine, But is Generative AI Really Helping Students?");
+	d3.select("#scene_title").text("The Grades Say It's Fine, But Is Generative AI Really Helping Students?");
 	d3.select("#scene_subtitle").text("Average change in GPA from before the semester to after, grouped by how many hours a week students used generative AI.");
 	draw_scene_1();
   } else if (current_scene === 2) {
-	d3.select("#scene_title").text("But Something Else is Happening.");
+	d3.select("#scene_title").text("But Something Else Is Happening.");
 	d3.select("#scene_subtitle").text("The same students, now measured on how dependent they feel on AI. Pay attention to the red line.");
 	draw_scene_2();
   } else if (current_scene === 3) {
-	d3.select("#scene_title").text("And it is not Just Dependency on AI.");
+	d3.select("#scene_title").text("And It Is Not Just Dependency on AI.");
 	d3.select("#scene_subtitle").text("The same chart again. This time look at exam anxiety and at how much students study on their own.");
 	draw_scene_3();
   } else if (current_scene === 4) {
-	d3.select("#scene_title").text("Even Bigger than the Grades, the Impact on Student Well-being.");
+	d3.select("#scene_title").text("Even Bigger Than The Grades, The Impact on Student Well-being.");
 	d3.select("#scene_subtitle").text("Burnout risk by usage group. Grades looked fine, but burnout does not. Use the menus below to explore.");
 	draw_scene_4();
   }
